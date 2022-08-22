@@ -24,7 +24,9 @@
 #include "dds/ddsrt/avl.h"
 #include "dds/ddsi/ddsi_config_impl.h"
 #include "dds/ddsi/q_log.h"
-#include "dds/ddsi/q_entity.h"
+#include "dds/ddsi/ddsi_entity.h"
+#include "dds/ddsi/ddsi_proxy_participant.h"
+#include "dds/ddsi/ddsi_endpoint.h"
 #include "dds/ddsi/ddsi_domaingv.h"
 #include "dds/ddsi/ddsi_ssl.h"
 
@@ -1037,7 +1039,7 @@ static void ddsi_tcp_close_conn (ddsi_tran_conn_t tc)
     ddsi_ipaddr_to_loc(&loc.c, &conn->m_peer_addr.a, addrfam_to_locator_kind(conn->m_peer_addr.a.sa_family));
     loc.c.port = conn->m_peer_port;
     loc.conn = tc;
-    purge_proxy_participants (gv, &loc, conn->m_base.m_server);
+    ddsi_purge_proxy_participants (gv, &loc, conn->m_base.m_server);
   }
 }
 

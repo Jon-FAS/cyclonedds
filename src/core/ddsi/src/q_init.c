@@ -39,7 +39,10 @@
 #include "dds/ddsi/ddsi_entity_index.h"
 #include "dds/ddsi/q_lease.h"
 #include "dds/ddsi/q_gc.h"
-#include "dds/ddsi/q_entity.h"
+#include "dds/ddsi/ddsi_entity.h"
+#include "dds/ddsi/ddsi_participant.h"
+#include "dds/ddsi/ddsi_proxy_participant.h"
+#include "dds/ddsi/ddsi_endpoint.h"
 #include "dds/ddsi/ddsi_ownip.h"
 #include "dds/ddsi/ddsi_domaingv.h"
 #include "dds/ddsi/q_xmsg.h"
@@ -1033,11 +1036,11 @@ static uint32_t ddsi_sertype_hash_wrap (const void *tp)
 #ifdef DDS_HAS_TOPIC_DISCOVERY
 static int topic_definition_equal_wrap (const void *tpd_a, const void *tpd_b)
 {
-  return topic_definition_equal (tpd_a, tpd_b);
+  return ddsi_topic_definition_equal (tpd_a, tpd_b);
 }
 static uint32_t topic_definition_hash_wrap (const void *tpd)
 {
-  return topic_definition_hash (tpd);
+  return ddsi_topic_definition_hash (tpd);
 }
 #endif /* DDS_HAS_TYPE_DISCOVERY */
 
@@ -1523,7 +1526,7 @@ int rtps_init (struct ddsi_domaingv *gv)
   ddsrt_mutex_init (&gv->participant_set_lock);
   ddsrt_cond_init (&gv->participant_set_cond);
   lease_management_init (gv);
-  gv->deleted_participants = deleted_participants_admin_new (&gv->logconfig, gv->config.prune_deleted_ppant.delay);
+  gv->deleted_participants = ddsi_deleted_participants_admin_new (&gv->logconfig, gv->config.prune_deleted_ppant.delay);
   gv->entity_index = entity_index_new (gv);
 
   ddsrt_mutex_init (&gv->privileged_pp_lock);
@@ -1900,7 +1903,7 @@ err_unicast_sockets:
 
   entity_index_free (gv->entity_index);
   gv->entity_index = NULL;
-  deleted_participants_admin_free (gv->deleted_participants);
+  ddsi_deleted_participants_admin_free (gv->deleted_participants);
   lease_management_term (gv);
   ddsrt_cond_destroy (&gv->participant_set_cond);
   ddsrt_mutex_destroy (&gv->participant_set_lock);
@@ -2109,14 +2112,13 @@ void rtps_stop (struct ddsi_domaingv *gv)
   }
 
   /* Once the receive threads have stopped, defragmentation and
-     reorder state can't change anymore, and can be freed safely. */
-  nn_reorder_free (gv->spdp_reorder);
-  nn_defrag_free (gv->spdp_defrag);
-  ddsrt_mutex_destroy (&gv->spdp_lock);
+     reorder state can't change anymore, and can be freed safely.
+     We don't do that here because it means rtps_init/rtps_fini
+     allow will leak it. */
 
   {
     struct entidx_enum_proxy_participant est;
-    struct proxy_participant *proxypp;
+    struct ddsi_proxy_participant *proxypp;
     const ddsrt_wctime_t tnow = ddsrt_time_wallclock();
     /* Clean up proxy readers, proxy writers and proxy
        participants. Deleting a proxy participants deletes all its
@@ -2125,7 +2127,7 @@ void rtps_stop (struct ddsi_domaingv *gv)
     entidx_enum_proxy_participant_init (&est, gv->entity_index);
     while ((proxypp = entidx_enum_proxy_participant_next (&est)) != NULL)
     {
-      delete_proxy_participant_by_guid (gv, &proxypp->e.guid, tnow, 1);
+      ddsi_delete_proxy_participant_by_guid (gv, &proxypp->e.guid, tnow, 1);
     }
     entidx_enum_proxy_participant_fini (&est);
     thread_state_asleep (thrst);
@@ -2135,9 +2137,9 @@ void rtps_stop (struct ddsi_domaingv *gv)
     struct entidx_enum_writer est_wr;
     struct entidx_enum_reader est_rd;
     struct entidx_enum_participant est_pp;
-    struct participant *pp;
-    struct writer *wr;
-    struct reader *rd;
+    struct ddsi_participant *pp;
+    struct ddsi_writer *wr;
+    struct ddsi_reader *rd;
     /* Delete readers, writers and participants, relying on
        delete_participant to schedule the deletion of the built-in
        rwriters to get all SEDP and SPDP dispose+unregister messages
@@ -2147,32 +2149,32 @@ void rtps_stop (struct ddsi_domaingv *gv)
     entidx_enum_writer_init (&est_wr, gv->entity_index);
     while ((wr = entidx_enum_writer_next (&est_wr)) != NULL)
     {
-      if (!is_builtin_entityid (wr->e.guid.entityid, NN_VENDORID_ECLIPSE))
-        delete_writer_nolinger (gv, &wr->e.guid);
+      if (!ddsi_is_builtin_entityid (wr->e.guid.entityid, NN_VENDORID_ECLIPSE))
+        ddsi_delete_writer_nolinger (gv, &wr->e.guid);
     }
     entidx_enum_writer_fini (&est_wr);
     thread_state_awake_to_awake_no_nest (thrst);
     entidx_enum_reader_init (&est_rd, gv->entity_index);
     while ((rd = entidx_enum_reader_next (&est_rd)) != NULL)
     {
-      if (!is_builtin_entityid (rd->e.guid.entityid, NN_VENDORID_ECLIPSE))
-        delete_reader (gv, &rd->e.guid);
+      if (!ddsi_is_builtin_entityid (rd->e.guid.entityid, NN_VENDORID_ECLIPSE))
+        ddsi_delete_reader (gv, &rd->e.guid);
     }
     entidx_enum_reader_fini (&est_rd);
     thread_state_awake_to_awake_no_nest (thrst);
 #ifdef DDS_HAS_TOPIC_DISCOVERY
     struct entidx_enum_topic est_tp;
-    struct topic *tp;
+    struct ddsi_topic *tp;
     entidx_enum_topic_init (&est_tp, gv->entity_index);
     while ((tp = entidx_enum_topic_next (&est_tp)) != NULL)
-      delete_topic (gv, &tp->e.guid);
+      ddsi_delete_topic (gv, &tp->e.guid);
     entidx_enum_topic_fini (&est_tp);
     thread_state_awake_to_awake_no_nest (thrst);
 #endif
     entidx_enum_participant_init (&est_pp, gv->entity_index);
     while ((pp = entidx_enum_participant_next (&est_pp)) != NULL)
     {
-      delete_participant (gv, &pp->e.guid);
+      ddsi_delete_participant (gv, &pp->e.guid);
     }
     entidx_enum_participant_fini (&est_pp);
     thread_state_asleep (thrst);
@@ -2205,6 +2207,13 @@ void rtps_stop (struct ddsi_domaingv *gv)
 
 void rtps_fini (struct ddsi_domaingv *gv)
 {
+  /* The receive threads have already been stopped, therefore
+     defragmentation and reorder state can't change anymore and
+     can be freed. */
+  nn_reorder_free (gv->spdp_reorder);
+  nn_defrag_free (gv->spdp_defrag);
+  ddsrt_mutex_destroy (&gv->spdp_lock);
+
   /* Shut down the GC system -- no new requests will be added */
   gcreq_queue_free (gv->gcreq_queue);
 
@@ -2288,7 +2297,7 @@ void rtps_fini (struct ddsi_domaingv *gv)
   ddsi_tkmap_free (gv->m_tkmap);
   entity_index_free (gv->entity_index);
   gv->entity_index = NULL;
-  deleted_participants_admin_free (gv->deleted_participants);
+  ddsi_deleted_participants_admin_free (gv->deleted_participants);
   lease_management_term (gv);
   ddsrt_mutex_destroy (&gv->participant_set_lock);
   ddsrt_cond_destroy (&gv->participant_set_cond);

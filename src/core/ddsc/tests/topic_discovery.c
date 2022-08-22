@@ -19,7 +19,7 @@
 #include "dds/ddsrt/heap.h"
 #include "dds/ddsrt/random.h"
 #include "dds/ddsi/ddsi_entity_index.h"
-#include "dds/ddsi/q_entity.h"
+#include "dds/ddsi/ddsi_entity.h"
 #include "dds/ddsi/q_whc.h"
 #include "dds__entity.h"
 
@@ -101,7 +101,7 @@ CU_Theory ((uint32_t num_pp, uint32_t num_tp, bool hist_data, bool live_data), d
         CU_ASSERT_FATAL (topic > 0);
       }
 
-    /* sleep for some time so that deliver_historical_data will be used for (at least some of)
+    /* sleep for some time so that ddsi_deliver_historical_data will be used for (at least some of)
        the sedp samples for the created topics */
     dds_sleepfor (DDS_MSECS (500));
   }

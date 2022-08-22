@@ -16,7 +16,7 @@
 #include "dds/ddsrt/process.h"
 #include "dds/ddsrt/threads.h"
 #include "dds/ddsi/ddsi_entity_index.h"
-#include "dds/ddsi/q_entity.h"
+#include "dds/ddsi/ddsi_entity.h"
 #include "dds/ddsi/q_whc.h"
 #include "dds__entity.h"
 
@@ -106,7 +106,7 @@ static void lifespan_fini(void)
 static void check_whc_state(dds_entity_t writer, seqno_t exp_min, seqno_t exp_max)
 {
   struct dds_entity *wr_entity;
-  struct writer *wr;
+  struct ddsi_writer *wr;
   struct whc_state whcst;
   CU_ASSERT_EQUAL_FATAL(dds_entity_pin(writer, &wr_entity), 0);
   thread_state_awake(lookup_thread_state(), &wr_entity->m_domain->gv);
